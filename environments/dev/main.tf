@@ -31,3 +31,11 @@ module "secure_network" {
   public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
   private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24"]
 }
+
+# Instantiate our enterprise secure compute tier
+module "secure_compute" {
+  source = "../../modules/compute"
+
+  vpc_id             = module.secure_network.vpc_id
+  private_subnet_ids = module.secure_network.private_subnet_ids
+}
