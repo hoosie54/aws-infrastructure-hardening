@@ -12,3 +12,8 @@ variable "private_subnet_cidrs" {
   type        = list(string)
   description = "CIDR ranges allocated for fully isolated backend application tiers"
 }
+
+variable "aws_region" {
+  type        = string
+  description = "Passed regional identifier mapping back to environment parameters"
+}
