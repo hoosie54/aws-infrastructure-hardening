@@ -15,16 +15,14 @@ resource "aws_security_group" "app_sg" {
   description = "Enforces isolated internal network access policies for app layer"
   vpc_id      = var.vpc_id
 
-  # Ingress (Inbound): No public access. Only accept traffic on port 8080 internally.
   ingress {
     description = "Restrictive application microservice traffic entry"
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/16"] # Restricted strictly to internal network traffic
+    cidr_blocks = ["10.0.0.0/16"]
   }
 
-  # Egress (Outbound): Block open web access. Allow outbound HTTPS only for secure patching.
   egress {
     description = "Restrict outbound traffic exclusively to secure web verification endpoints"
     from_port   = 443
@@ -34,24 +32,53 @@ resource "aws_security_group" "app_sg" {
   }
 }
 
-# 3. Hardened EC2 Compute Instance
-resource "aws_instance" "secure_app" {
-  ami           = data.aws_ami.amazon_linux.id
-  instance_type = "t3.micro"
-  subnet_id     = var.private_subnet_ids[0] # Drop safely into our private network tier
+# =========================================================================
+# IAM SECURITY POSTURE LAYER (Resolves CKV2_AWS_41)
+# =========================================================================
 
-  vpc_security_group_ids = [aws_security_group.app_sg.id]
+# 3. Create a secure execution role for the virtual machine
+resource "aws_iam_role" "app_execution_role" {
+  name = "enterprise-app-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "://amazonaws.com" }
+    }]
+  })
+}
+
+# 4. Wrap the execution role inside an AWS Instance Profile container
+resource "aws_iam_instance_profile" "app_profile" {
+  name = "enterprise-app-instance-profile"
+  role = aws_iam_role.app_execution_role.name
+}
+
+# =========================================================================
+# HARDENED COMPUTE LAYER
+# =========================================================================
+
+# 5. Hardened EC2 Compute Instance
+resource "aws_instance" "secure_app" {
+  ami                  = data.aws_ami.amazon_linux.id
+  instance_type        = "t3.micro"
+  subnet_id            = var.private_subnet_ids[0] # Drop safely into our private network tier
+  security_groups      = [aws_security_group.app_sg.id]
+  iam_instance_profile = aws_iam_instance_profile.app_profile.name # Resolves CKV2_AWS_41
+
+  # COMPLIANCE OPTIMIZATIONS
+  ebs_optimized           = true # Resolves CKV_AWS_135
+  monitoring              = true # Resolves CKV_AWS_126
 
   # CRITICAL SECURITY GUARDRAILS
-
-  # A. Enforce Strict IMDSv2 (Neutralizes Cloud SSRF Credential Theft)
   metadata_options {
     http_endpoint               = "enabled"
-    http_tokens                 = "required" # Requires cryptographic session token handshakes
-    http_put_response_hop_limit = 1          # Prevents container breakout token inheritance
+    http_tokens                 = "required" # Enforces strict IMDSv2 session tokens
+    http_put_response_hop_limit = 1
   }
 
-  # B. Enforce Root Storage Cryptography (Defends against physical/snapshot theft data leaks)
   root_block_device {
     encrypted             = true # Enables robust AES-256 block storage encryption
     delete_on_termination = true
