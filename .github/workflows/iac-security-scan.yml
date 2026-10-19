@@ -1,0 +1,30 @@
+name: "IaC Security Compliance Audit"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  checkov-audit:
+    name: "Execute Checkov Static Scan"
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      # Step 1: Securely pull your code into GitHub's temporary scanning runner
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      # Step 2: Run Checkov tool over your repository structure
+      - name: Run Checkov Static Analysis
+        id: checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          framework: terraform
+          output_format: cli
+          soft_fail: false # Hard fail the build if critical cloud risks are found
